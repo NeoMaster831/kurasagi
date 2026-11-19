@@ -33,6 +33,7 @@ endlocal & exit /b %RC%
 set "ROOT=%~dp0"
 set "SOLUTION=%ROOT%kurasagi.sln"
 set "BUILD_LOG=%ROOT%build.log"
+set "DIAG_LOG=%ROOT%build.diag.txt"
 
 set "CONFIG=%~1"
 if "%CONFIG%"=="" set "CONFIG=Release"
@@ -80,7 +81,7 @@ echo         %MSBUILD%
 
 echo [2/3] Checking Windows Driver Kit ...
 set "WDK_ROOT=%ProgramFiles(x86)%\Windows Kits\10"
-if not defined WDKContentRoot set "WDKContentRoot=%WDK_ROOT%\"
+set "WDKContentRoot=%WDK_ROOT%\"
 
 rem Pick the newest SDK target that actually contains kernel-mode headers
 rem (ntddk.h). A newer plain Windows SDK may be installed without km headers,
@@ -102,8 +103,8 @@ echo         WDK headers: %WDK_VER%
 echo [3/3] Building ...
 echo.
 if exist "%BUILD_LOG%" del /f /q "%BUILD_LOG%" >nul 2>&1
-"%MSBUILD%" "%SOLUTION%" -nologo -m -t:Build -p:Configuration=%CONFIG% -p:Platform=%PLATFORM% -p:WindowsTargetPlatformVersion=%WDK_VER% -v:minimal -fl "-flp:LogFile=%BUILD_LOG%;Verbosity=normal"
-if errorlevel 1 exit /b 1
+"%MSBUILD%" "%SOLUTION%" -nologo -m -t:Build -p:Configuration=%CONFIG% -p:Platform=%PLATFORM% -p:WindowsTargetPlatformVersion=%WDK_VER% -p:WindowsSDKVersion=%WDK_VER%\ -v:minimal -fl "-flp:LogFile=%BUILD_LOG%;Verbosity=normal"
+if errorlevel 1 goto :build_failed
 
 echo.
 echo Build finished.
@@ -116,3 +117,38 @@ if exist "%OUTDIR%" (
     if exist "%OUTDIR%\VerifyPg\VerifyPg.inf" echo   - package: %OUTDIR%\VerifyPg\
 )
 exit /b 0
+
+
+:build_failed
+echo.
+echo [ERROR] Build failed. MSBuild log: "%BUILD_LOG%"
+echo [INFO] Writing environment diagnostics to "%DIAG_LOG%" ...
+for %%I in ("%MSBUILD%") do set "MSBUILD_DIR=%%~dpI"
+(
+    echo === kurasagi build diagnostics ===
+    echo WDK_VER=%WDK_VER%
+    echo WDK_ROOT=%WDK_ROOT%
+    echo WDKContentRoot=%WDKContentRoot%
+    echo MSBUILD=%MSBUILD%
+    echo CONFIG=%CONFIG%  PLATFORM=%PLATFORM%
+    echo.
+    echo --- Windows Kits Include directory ---
+    dir /b "%WDK_ROOT%\Include" 2^>^&1
+    echo.
+    echo --- Selected kernel include folder ---
+    dir /b "%WDK_ROOT%\Include\%WDK_VER%\km" 2^>^&1
+    echo.
+    echo --- WDK build props directories ---
+    dir /b "%WDK_ROOT%\build" 2^>^&1
+    echo.
+    echo --- WindowsDriver props files ---
+    dir /b /s "%WDK_ROOT%\build\WindowsDriver*.props" 2^>^&1
+    echo.
+    echo --- PlatformToolsets ---
+    dir /b "%MSBUILD_DIR%..\..\Microsoft\VC\v170\Platforms\x64\PlatformToolsets" 2^>^&1
+    echo.
+    echo --- Resolved project properties ---
+    "%MSBUILD%" "%ROOT%kurasagi\kurasagi.vcxproj" -nologo -p:Configuration=%CONFIG% -p:Platform=%PLATFORM% -p:WindowsTargetPlatformVersion=%WDK_VER% -p:WindowsSDKVersion=%WDK_VER%\ -getProperty:IncludePath -getProperty:WindowsTargetPlatformVersion -getProperty:WindowsSDKVersion -getProperty:WDKContentRoot -getProperty:PlatformToolset 2^>^&1
+) > "%DIAG_LOG%" 2>&1
+echo [INFO] Diagnostics written. Please send "%DIAG_LOG%" for analysis.
+exit /b 1
