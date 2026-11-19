@@ -48,12 +48,6 @@ StartType      = 3               ; SERVICE_DEMAND_START
 ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
 ServiceBinary  = %13%\VerifyPg.sys
 
-[VerifyPg_Device.NT.Wdf]
-KmdfService = VerifyPg, VerifyPg_wdfsect
-
-[VerifyPg_wdfsect]
-KmdfLibraryVersion = $KMDFVERSION$
-
 [Strings]
 SPSVCINST_ASSOCSERVICE = 0x00000002
 ManufacturerName = "<Your manufacturer name>" ;TODO: Replace with your manufacturer name

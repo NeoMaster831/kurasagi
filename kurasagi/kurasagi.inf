@@ -48,12 +48,6 @@ StartType      = 3               ; SERVICE_DEMAND_START
 ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
 ServiceBinary  = %13%\kurasagi.sys
 
-[kurasagi_Device.NT.Wdf]
-KmdfService = kurasagi, kurasagi_wdfsect
-
-[kurasagi_wdfsect]
-KmdfLibraryVersion = $KMDFVERSION$
-
 [Strings]
 SPSVCINST_ASSOCSERVICE = 0x00000002
 ManufacturerName = "<Your manufacturer name>" ;TODO: Replace with your manufacturer name
