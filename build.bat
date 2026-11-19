@@ -94,19 +94,27 @@ echo [2/3] Checking Windows Driver Kit ...
 set "WDK_ROOT=%ProgramFiles(x86)%\Windows Kits\10"
 set "WDKContentRoot=%WDK_ROOT%\"
 
-rem Pick the newest SDK target that actually contains kernel-mode headers
-rem (ntddk.h). A newer plain Windows SDK may be installed without km headers,
-rem which is exactly what breaks the default build.
+rem Pick the newest SDK target that is COMPLETE: kernel-mode headers
+rem (ntddk.h), WindowsDriver targets and the DriverKit MSBuild task DLL.
+rem A half-installed WDK (targets present, task DLL missing) must be skipped.
 set "WDK_VER="
+set "WDK_INCOMPLETE="
 for /f "usebackq delims=" %%i in (`dir /b /ad /o-n "%WDK_ROOT%\Include\10.*" 2^>nul`) do (
-    if not defined WDK_VER if exist "%WDK_ROOT%\Include\%%i\km\ntddk.h" set "WDK_VER=%%i"
+    if not defined WDK_VER call :check_wdk "%%i"
 )
 
 if not defined WDK_VER (
-    echo [ERROR] Kernel-mode headers ^(ntddk.h^) not found under
-    echo         "%WDK_ROOT%\Include".
-    echo         Open Visual Studio Installer and install the
-    echo         "Windows Driver Kit" component ^(or run the WDK installer^).
+    echo [ERROR] No complete WDK installation found under "%WDK_ROOT%".
+    if defined WDK_INCOMPLETE (
+        echo         WDK %WDK_INCOMPLETE% exists but its build task DLL is missing:
+        echo         build\%WDK_INCOMPLETE%\bin\Microsoft.DriverKit.Build.Tasks.*.dll
+        echo         The WDK installation is incomplete or damaged.
+        echo         Run the WDK installer and choose "Repair", or reinstall
+        echo         the "Windows Driver Kit" component in Visual Studio Installer.
+    ) else (
+        echo         Install the "Windows Driver Kit" component via Visual Studio
+        echo         Installer ^(or run the WDK installer^).
+    )
     exit /b 1
 )
 echo         WDK headers: %WDK_VER%
@@ -178,4 +186,17 @@ exit /b 1
 :probe_hit
 set "MSBUILD=%MB_PATH%"
 set "DRIVER_TOOLSET=1"
+exit /b 0
+
+
+rem A usable WDK target needs headers, WindowsDriver targets and the task DLL.
+:check_wdk
+set "CAND_VER=%~1"
+if not exist "%WDK_ROOT%\Include\%CAND_VER%\km\ntddk.h" exit /b 1
+if not exist "%WDK_ROOT%\build\%CAND_VER%\WindowsDriver.common.targets" exit /b 1
+if not exist "%WDK_ROOT%\build\%CAND_VER%\bin\Microsoft.DriverKit.Build.Tasks.*.dll" (
+    if not defined WDK_INCOMPLETE set "WDK_INCOMPLETE=%CAND_VER%"
+    exit /b 1
+)
+set "WDK_VER=%CAND_VER%"
 exit /b 0
