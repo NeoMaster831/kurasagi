@@ -3,44 +3,49 @@
 BOOLEAN WriteOnReadOnlyMemory(PVOID src, PVOID dst, size_t size) {
 
 	PMDL mdl = NULL;
+	PVOID mapped = NULL;
 
 	if (size == 0) return TRUE;
+
+	if (src == NULL || dst == NULL) {
+		return FALSE;
+	}
+
+	// KDU-mapped drivers have no registered exception handlers (no SEH support),
+	// so validate the destination pages up front instead of relying on __try/__except.
+	for (size_t offset = 0; offset < size; offset += PAGE_SIZE) {
+		if (!MmIsAddressValid((PUCHAR)dst + offset)) {
+			return FALSE;
+		}
+	}
+
+	if (!MmIsAddressValid((PUCHAR)dst + size - 1)) {
+		return FALSE;
+	}
+
 	mdl = IoAllocateMdl(dst, (ULONG)size, FALSE, FALSE, NULL);
 
 	if (mdl == NULL) {
 		return FALSE;
 	}
 
-	PVOID mapped = NULL;
-	BOOLEAN success = FALSE;
+	MmProbeAndLockPages(mdl, KernelMode, IoReadAccess);
 
-	__try {
-		MmProbeAndLockPages(mdl, KernelMode, IoReadAccess);
-		mapped = MmMapLockedPagesSpecifyCache(mdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
-
-		if (mapped == NULL) {
-			__leave;
-		}
-
-		MmProtectMdlSystemAddress(mdl, PAGE_READWRITE);
-		RtlCopyMemory(mapped, src, size);
-
-		success = TRUE;
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		success = FALSE;
-	}
-
-	if (mapped != NULL) {
-		MmUnmapLockedPages(mapped, mdl);
-	}
-
-	if (mdl != NULL) {
+	mapped = MmMapLockedPagesSpecifyCache(mdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
+	if (mapped == NULL) {
 		MmUnlockPages(mdl);
 		IoFreeMdl(mdl);
+		return FALSE;
 	}
 
-	return success;
+	MmProtectMdlSystemAddress(mdl, PAGE_READWRITE);
+	RtlCopyMemory(mapped, src, size);
+
+	MmUnmapLockedPages(mapped, mdl);
+	MmUnlockPages(mdl);
+	IoFreeMdl(mdl);
+
+	return TRUE;
 }
 
 
