@@ -67,9 +67,14 @@ if not exist "%SOLUTION%" (
 echo [1/3] Locating Visual Studio / MSBuild ...
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 set "MSBUILD="
+set "MSBUILD_FALLBACK="
+set "DRIVER_TOOLSET="
 if not exist "%VSWHERE%" goto :vs_done
-for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe`) do set "MSBUILD=%%i"
+for /f "usebackq delims=" %%i in (`"%VSWHERE%" -all -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe`) do (
+    if not defined MSBUILD call :probe_msbuild "%%i"
+)
 :vs_done
+if not defined MSBUILD if defined MSBUILD_FALLBACK set "MSBUILD=%MSBUILD_FALLBACK%"
 
 if not defined MSBUILD (
     echo [ERROR] MSBuild not found.
@@ -78,6 +83,12 @@ if not defined MSBUILD (
     exit /b 1
 )
 echo         %MSBUILD%
+if not defined DRIVER_TOOLSET (
+    echo [WARN]  WindowsKernelModeDriver10.0 toolset not found for this
+    echo         Visual Studio instance - the WDK integration is missing.
+    echo         Install the "Windows Driver Kit" component for THIS instance
+    echo         in Visual Studio Installer ^(or install full VS 2022 + WDK^).
+)
 
 echo [2/3] Checking Windows Driver Kit ...
 set "WDK_ROOT=%ProgramFiles(x86)%\Windows Kits\10"
@@ -130,6 +141,7 @@ for %%I in ("%MSBUILD%") do set "MSBUILD_DIR=%%~dpI"
     echo WDK_ROOT=%WDK_ROOT%
     echo WDKContentRoot=%WDKContentRoot%
     echo MSBUILD=%MSBUILD%
+    echo DRIVER_TOOLSET=%DRIVER_TOOLSET%
     echo CONFIG=%CONFIG%  PLATFORM=%PLATFORM%
     echo.
     echo --- Windows Kits Include directory ---
@@ -152,3 +164,18 @@ for %%I in ("%MSBUILD%") do set "MSBUILD_DIR=%%~dpI"
 ) > "%DIAG_LOG%" 2>&1
 echo [INFO] Diagnostics written. Please send "%DIAG_LOG%" for analysis.
 exit /b 1
+
+
+rem Pick the MSBuild whose Visual Studio instance has the WDK driver toolset.
+:probe_msbuild
+set "MB_PATH=%~1"
+for %%I in ("%MB_PATH%") do set "MB_DIR=%%~dpI"
+if exist "%MB_DIR%..\..\Microsoft\VC\v170\Platforms\x64\PlatformToolsets\WindowsKernelModeDriver10.0" goto :probe_hit
+if exist "%MB_DIR%..\..\..\Common7\IDE\VC\VCTargets\Platforms\x64\PlatformToolsets\WindowsKernelModeDriver10.0" goto :probe_hit
+if not defined MSBUILD_FALLBACK set "MSBUILD_FALLBACK=%MB_PATH%"
+exit /b 1
+
+:probe_hit
+set "MSBUILD=%MB_PATH%"
+set "DRIVER_TOOLSET=1"
+exit /b 0
