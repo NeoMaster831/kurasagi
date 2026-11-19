@@ -79,21 +79,30 @@ if not defined MSBUILD (
 echo         %MSBUILD%
 
 echo [2/3] Checking Windows Driver Kit ...
-set "WDK_OK="
-for /d %%i in ("%ProgramFiles(x86)%\Windows Kits\10\Include\*") do if exist "%%i\km" set "WDK_OK=1"
+set "WDK_ROOT=%ProgramFiles(x86)%\Windows Kits\10"
+if not defined WDKContentRoot set "WDKContentRoot=%WDK_ROOT%\"
 
-if not defined WDK_OK (
-    echo [ERROR] Windows Driver Kit ^(WDK^) not detected.
+rem Pick the newest SDK target that actually contains kernel-mode headers
+rem (ntddk.h). A newer plain Windows SDK may be installed without km headers,
+rem which is exactly what breaks the default build.
+set "WDK_VER="
+for /f "usebackq delims=" %%i in (`dir /b /ad /o-n "%WDK_ROOT%\Include\10.*" 2^>nul`) do (
+    if not defined WDK_VER if exist "%WDK_ROOT%\Include\%%i\km\ntddk.h" set "WDK_VER=%%i"
+)
+
+if not defined WDK_VER (
+    echo [ERROR] Kernel-mode headers ^(ntddk.h^) not found under
+    echo         "%WDK_ROOT%\Include".
     echo         Open Visual Studio Installer and install the
-    echo         "Windows Driver Kit" component.
+    echo         "Windows Driver Kit" component ^(or run the WDK installer^).
     exit /b 1
 )
-echo         WDK OK
+echo         WDK headers: %WDK_VER%
 
 echo [3/3] Building ...
 echo.
 if exist "%BUILD_LOG%" del /f /q "%BUILD_LOG%" >nul 2>&1
-"%MSBUILD%" "%SOLUTION%" -nologo -m -t:Build -p:Configuration=%CONFIG% -p:Platform=%PLATFORM% -v:minimal -fl "-flp:LogFile=%BUILD_LOG%;Verbosity=normal"
+"%MSBUILD%" "%SOLUTION%" -nologo -m -t:Build -p:Configuration=%CONFIG% -p:Platform=%PLATFORM% -p:WindowsTargetPlatformVersion=%WDK_VER% -v:minimal -fl "-flp:LogFile=%BUILD_LOG%;Verbosity=normal"
 if errorlevel 1 exit /b 1
 
 echo.
